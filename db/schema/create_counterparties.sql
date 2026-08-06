@@ -1,4 +1,4 @@
 create table counterparties (
     id bigint generated always as identity primary key,
-    name text
+    name text not null
 )
