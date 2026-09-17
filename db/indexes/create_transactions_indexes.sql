@@ -1,1 +1,3 @@
-create index idx_transactions_account_id_created_at on transactions (account_id, created_at)
+create index idx_transactions_account_id_created_at
+    on transactions (account_id, created_at)
+    include (amount, direction);
