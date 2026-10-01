@@ -8,3 +8,4 @@ A ideia é simular um extrato bancário / carteira digital e, a partir de querie
 
 - [01 - Extrato: índice concatenado](docs/01-extrato-indice-concatenado.md)
 - [02 - Saldo: Index Only Scan](docs/02-saldo-index-only-scan.md)
+- [03 - Paginação do extrato: OFFSET vs. keyset pagination](docs/03-paginacao-offset-vs-keyset-pagination.md)

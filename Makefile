@@ -9,9 +9,11 @@ SCHEMA_FILES := db/schema/create_accounts.sql \
                 db/schema/create_counterparties.sql \
                 db/schema/create_transactions.sql
 
-INDEX_FILES := db/indexes/create_transactions_indexes.sql
+INDEX_FILES := db/indexes/create_transactions_indexes.sql \
+               db/indexes/create_pagination_index.sql
 
-INDEX_NAMES := idx_transactions_account_id_created_at
+INDEX_NAMES := idx_transactions_account_id_created_at \
+               idx_transactions_account_pagination
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python3
