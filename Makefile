@@ -11,11 +11,13 @@ SCHEMA_FILES := db/schema/create_accounts.sql \
 
 INDEX_FILES := db/indexes/create_transactions_indexes.sql \
                db/indexes/create_pagination_index.sql \
-               db/indexes/create_antifraud_partial_index.sql
+               db/indexes/create_antifraud_partial_index.sql \
+               db/indexes/create_counterparties_expression_index.sql
 
 INDEX_NAMES := idx_transactions_account_id_created_at \
                idx_transactions_account_pagination \
-               idx_transactions_flagged_queue
+               idx_transactions_flagged_queue \
+               idx_counterparties_upper_name
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python3
