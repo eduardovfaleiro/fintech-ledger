@@ -26,7 +26,7 @@ N_ACCOUNTS := 100000
 N_COUNTERPARTIES := 5000
 N_TRANSACTIONS := 10000000
 
-.PHONY: schema indexes drop-indexes venv generate-data benchmark-n-plus-one
+.PHONY: schema indexes drop-indexes venv generate-data benchmark-n-plus-one benchmark-scale
 
 schema:
 	@for f in $(SCHEMA_FILES); do \
@@ -61,3 +61,6 @@ generate-data:
 benchmark-n-plus-one:
 	PGHOST=$(DB_HOST) PGPORT=$(DB_PORT) PGDATABASE=$(DB_NAME) PGUSER=$(DB_USER) PGPASSWORD=postgres \
 		$(PYTHON) benchmarks/benchmark_n_plus_one.py
+
+benchmark-scale:
+	$(PSQL) -f benchmarks/benchmark_scale.sql

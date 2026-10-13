@@ -12,3 +12,4 @@ A ideia é simular um extrato bancário / carteira digital e, a partir de querie
 - [04 - Fila antifraude: índice parcial](docs/04-fila-antifraude-indice-parcial.md)
 - [05 - Busca de estabelecimentos: índice sobre expressão](docs/05-busca-estabelecimento-indice-expressao.md)
 - [06 - Extrato com estabelecimento: JOIN vs. N+1](docs/06-extrato-com-estabelecimento-join-vs-n1.md)
+- [07 - Benchmark de escala: 1M vs. 10M vs. 50M](docs/07-benchmark-escala.md)
