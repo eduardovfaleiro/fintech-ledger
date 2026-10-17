@@ -26,7 +26,7 @@ N_ACCOUNTS := 100000
 N_COUNTERPARTIES := 5000
 N_TRANSACTIONS := 10000000
 
-.PHONY: schema indexes drop-indexes venv generate-data benchmark-n-plus-one benchmark-scale benchmark-skip-locked
+.PHONY: schema indexes drop-indexes venv generate-data test benchmark-n-plus-one benchmark-scale benchmark-skip-locked
 
 schema:
 	@for f in $(SCHEMA_FILES); do \
@@ -57,6 +57,10 @@ generate-data:
 		$(PYTHON) generate_counterparties.py --count $(N_COUNTERPARTIES)
 	PGHOST=$(DB_HOST) PGPORT=$(DB_PORT) PGDATABASE=$(DB_NAME) PGUSER=$(DB_USER) PGPASSWORD=postgres \
 		$(PYTHON) generate_transactions.py --count $(N_TRANSACTIONS)
+
+test:
+	PGHOST=$(DB_HOST) PGPORT=$(DB_PORT) PGDATABASE=$(DB_NAME) PGUSER=$(DB_USER) PGPASSWORD=postgres \
+		$(PYTHON) -m unittest discover -s tests -v
 
 benchmark-n-plus-one:
 	PGHOST=$(DB_HOST) PGPORT=$(DB_PORT) PGDATABASE=$(DB_NAME) PGUSER=$(DB_USER) PGPASSWORD=postgres \
