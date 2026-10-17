@@ -1,0 +1,140 @@
+{
+  "benchmark": "antifraud_queue_concurrency",
+  "methodology": {
+    "jobs_per_execution": 1000,
+    "workers": 4,
+    "batch_size": 25,
+    "processing_delay_ms_inside_transaction": 5,
+    "warmup_executions": 2,
+    "measured_executions_per_scenario": 30,
+    "measurement": "client wall-clock time to drain the queue",
+    "outlier_removal": "none",
+    "correctness_check": "every job claimed exactly once"
+  },
+  "environment": {
+    "recorded_at": "2026-10-17T00:38:12.339784+00:00",
+    "client": {
+      "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+      "python": "3.12.3",
+      "logical_cpus": 12,
+      "memory_bytes": 32922296320
+    },
+    "database": {
+      "version": "PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+      "size_bytes": 2086909631,
+      "settings": {
+        "effective_cache_size": {
+          "setting": "524288",
+          "unit": "8kB"
+        },
+        "jit": {
+          "setting": "on",
+          "unit": null
+        },
+        "max_parallel_workers_per_gather": {
+          "setting": "2",
+          "unit": null
+        },
+        "random_page_cost": {
+          "setting": "4",
+          "unit": null
+        },
+        "shared_buffers": {
+          "setting": "16384",
+          "unit": "8kB"
+        },
+        "work_mem": {
+          "setting": "4096",
+          "unit": "kB"
+        }
+      }
+    }
+  },
+  "results": {
+    "for_update": {
+      "executions": 30,
+      "min_ms": 230.294946,
+      "p50_ms": 233.462682,
+      "p95_ms": 238.652673,
+      "p99_ms": 240.939817,
+      "max_ms": 241.519935,
+      "mean_ms": 233.939911
+    },
+    "for_update_skip_locked": {
+      "executions": 30,
+      "min_ms": 63.746942,
+      "p50_ms": 65.302308,
+      "p95_ms": 66.409837,
+      "p99_ms": 68.633529,
+      "max_ms": 69.515137,
+      "mean_ms": 65.447124
+    }
+  },
+  "p50_speedup": 3.575,
+  "samples_ms": {
+    "for_update": [
+      237.593182,
+      235.551861,
+      234.471783,
+      233.934329,
+      235.210086,
+      232.287873,
+      232.400966,
+      232.808314,
+      231.279311,
+      235.11106,
+      232.631462,
+      239.519529,
+      233.676966,
+      230.703174,
+      230.793655,
+      233.116318,
+      234.21398,
+      235.689453,
+      232.525764,
+      237.141453,
+      234.180246,
+      234.990907,
+      241.519935,
+      233.248399,
+      232.087028,
+      230.294946,
+      235.597502,
+      232.372738,
+      231.29244,
+      231.952665
+    ],
+    "for_update_skip_locked": [
+      64.251985,
+      65.58453,
+      65.099555,
+      65.672916,
+      65.031547,
+      64.864481,
+      69.515137,
+      65.593587,
+      66.216823,
+      65.590842,
+      66.266086,
+      66.475111,
+      66.330057,
+      65.250369,
+      66.311983,
+      66.137163,
+      65.100977,
+      65.072284,
+      64.913424,
+      63.746942,
+      65.492627,
+      64.117633,
+      64.842319,
+      64.93253,
+      66.138044,
+      65.354246,
+      64.49228,
+      64.260683,
+      65.707262,
+      65.050302
+    ]
+  }
+}

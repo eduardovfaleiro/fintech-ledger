@@ -2,12 +2,12 @@
 
 Agora, vamos para o caso 6. Vamos buscar as 50 transações mais recentes de uma conta junto com o nome de cada estabelecimento.
 
-**Cenário:** PostgreSQL 18.4, tabela `transactions` com 10 milhões de linhas, conta `30362`, páginas de 50 itens e cache quente. Foram realizadas 1.000 execuções de cada abordagem pelo mesmo cliente local.
+**Cenário:** PostgreSQL 18.4, tabela `transactions` com 10 milhões de linhas, conta `30362`, páginas de 50 itens e cache quente. Depois de 20 aquecimentos, foram realizadas 1.000 execuções de cada abordagem pelo mesmo cliente local. A ordem foi alternada a cada execução e nenhuma amostra foi removida.
 
-| Abordagem | Comandos SQL por página | Mediana |
-|---|---:|---:|
-| N+1 | 51 | 5,001 ms |
-| `JOIN` | 1 | 0,307 ms |
+| Abordagem | Comandos por página | p50 | p95 | p99 |
+|---|---:|---:|---:|---:|
+| N+1 | 51 | 4,978 ms | 5,931 ms | 8,414 ms |
+| `JOIN` | 1 | 0,418 ms | 0,601 ms | 0,746 ms |
 
 ## O problema N+1
 
@@ -65,7 +65,7 @@ De fato, isoladamente ela é extremamente rápida: apenas 0,010 ms.
 
 Entretanto, o tempo do banco não é o único custo. Cada consulta precisa ser enviada pelo cliente, interpretada, planejada, executada e devolvida. Repetir esse processo 50 vezes custa mais do que fazer os mesmos acessos dentro de um único plano de execução.
 
-No benchmark, a abordagem N+1 levou uma mediana de 5,001 ms por página.
+No benchmark, a abordagem N+1 levou um p50 de 4,978 ms por página. No p99, em que as execuções mais lentas começam a aparecer, chegou a 8,414 ms.
 
 ## Uma única consulta com `JOIN`
 
@@ -131,8 +131,8 @@ Se removêssemos o `LIMIT` e juntássemos milhões de transações, o otimizador
 
 ## O que mudou
 
-Com N+1, uma única página exigiu 51 comandos e levou uma mediana de 5,001 ms. Com o `JOIN`, a mesma página exigiu um comando e levou 0,307 ms, sendo aproximadamente 16 vezes mais rápida.
+Com N+1, uma única página exigiu 51 comandos e levou um p50 de 4,978 ms. Com o `JOIN`, a mesma página exigiu um comando e levou 0,418 ms, sendo aproximadamente 11,9 vezes mais rápida no p50.
 
 O ganho não veio de eliminar as 50 buscas na chave primária. O plano mostra que elas continuam existindo. O ganho veio de entregar esse trabalho ao banco de uma vez, eliminando 50 viagens entre a aplicação e o PostgreSQL.
 
-O benchmark pode ser reproduzido com [`benchmark_n_plus_one.py`](../benchmarks/benchmark_n_plus_one.py).
+O benchmark pode ser reproduzido com [`benchmark_n_plus_one.py`](../benchmarks/benchmark_n_plus_one.py). As amostras brutas e os metadados do ambiente estão em [`n_plus_one.json`](../benchmarks/results/n_plus_one.json), e o protocolo utilizado está descrito em [`METHODOLOGY.md`](../benchmarks/METHODOLOGY.md).
