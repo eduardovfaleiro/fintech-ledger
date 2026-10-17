@@ -1,95 +1,93 @@
 # Fintech Ledger
 
-Projeto de portfólio em PostgreSQL para demonstrar indexação e tuning de queries em volumes grandes de dados.
+[![CI](https://github.com/eduardovfaleiro/fintech-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/eduardovfaleiro/fintech-ledger/actions/workflows/ci.yml)
 
-A ideia é simular um extrato bancário / carteira digital e, a partir de consultas reais desse domínio, documentar o caminho completo: query lenta → plano de execução ruim → índice criado → plano bom → ganho medido.
+English | [Português](README.pt-BR.md)
 
-Os benchmarks utilizam 10 milhões de transações, com uma etapa adicional de escala em 1M, 10M e 50M. Todos os planos foram coletados com PostgreSQL 18.4 e `EXPLAIN (ANALYZE, BUFFERS)`.
+A PostgreSQL performance case study built around a realistic fintech ledger. It demonstrates indexing, execution-plan analysis and concurrent queue processing on 10 million transactions, with an additional scalability benchmark at 1M, 10M and 50M rows.
 
-## Resultados
+Each case follows the same reasoning path: slow query → execution-plan evidence → targeted change → improved plan → measured result.
 
-| Caso | Antes | Depois | Resultado principal |
+## Results
+
+| Case | Before | After | Main result |
 |---|---:|---:|---|
-| Extrato por conta e período | 220 ms | 0,060 ms | 11 blocos no lugar de 114.654 |
-| Saldo da conta | 12,249 ms | 2,780 ms | `Index Only Scan` com 0 heap fetches |
-| Página 100 do extrato | 6,184 ms | 0,115 ms | keyset pagination aproximadamente 54x mais rápida |
-| Fila antifraude | 229,133 ms | 0,047 ms | índice parcial de 3.104 kB no lugar de 387 MB |
-| Busca por estabelecimento | 1,175 ms | 0,036 ms | índice sobre `upper(name)` aproximadamente 33x mais rápido |
-| Extrato com estabelecimento | 5,001 ms | 0,307 ms | um `JOIN` no lugar de 51 comandos |
-| Extrato em 50M de linhas | 936,632 ms | 0,015 ms | 10 blocos no lugar de 573.017 |
+| Statement by account and period | 220 ms | 0.060 ms | 11 blocks instead of 114,654 |
+| Account balance | 12.249 ms | 2.780 ms | `Index Only Scan` with 0 heap fetches |
+| Statement page 100 | 6.184 ms | 0.115 ms | keyset pagination was about 54× faster |
+| Antifraud queue lookup | 229.133 ms | 0.047 ms | 3,104 kB partial index instead of a 387 MB full index |
+| Counterparty search | 1.175 ms | 0.036 ms | `upper(name)` expression index was about 33× faster |
+| Statement with counterparty (p50) | 4.978 ms | 0.418 ms | one `JOIN` instead of 51 commands; 11.9× faster |
+| Statement at 50M rows (p50) | 1,142.238 ms | 0.150 ms | 14 blocks instead of 572,471; 7,630× faster |
+| Four queue workers (p50) | 233.463 ms | 65.302 ms | `SKIP LOCKED`; 3.6× faster with no duplicate claims |
 
-## Estudos de caso
+Cases 6–8 report client-observed latency distributions rather than isolated runs. The protocol, percentiles, limitations and reference environment are documented in [`benchmarks/METHODOLOGY.md`](benchmarks/METHODOLOGY.md). Raw samples and plans are versioned in [`benchmarks/results/`](benchmarks/results/).
 
-- [01 — Extrato: índice concatenado](docs/01-extrato-indice-concatenado.md)
-- [02 — Saldo: Index Only Scan](docs/02-saldo-index-only-scan.md)
-- [03 — Paginação do extrato: OFFSET vs. keyset pagination](docs/03-paginacao-offset-vs-keyset-pagination.md)
-- [04 — Fila antifraude: índice parcial](docs/04-fila-antifraude-indice-parcial.md)
-- [05 — Busca de estabelecimentos: índice sobre expressão](docs/05-busca-estabelecimento-indice-expressao.md)
-- [06 — Extrato com estabelecimento: JOIN vs. N+1](docs/06-extrato-com-estabelecimento-join-vs-n1.md)
-- [07 — Benchmark de escala: 1M vs. 10M vs. 50M](docs/07-benchmark-escala.md)
+## Case studies
 
-## Massa de dados
+The detailed write-ups are in Portuguese and include the SQL, execution plans and the reasoning behind each change.
 
-O gerador cria:
+- [01 — Statement: multicolumn index](docs/01-extrato-indice-concatenado.md)
+- [02 — Balance: Index Only Scan](docs/02-saldo-index-only-scan.md)
+- [03 — Statement pagination: OFFSET vs. keyset](docs/03-paginacao-offset-vs-keyset-pagination.md)
+- [04 — Antifraud queue: partial index](docs/04-fila-antifraude-indice-parcial.md)
+- [05 — Counterparty search: expression index](docs/05-busca-estabelecimento-indice-expressao.md)
+- [06 — Statement with counterparty: JOIN vs. N+1](docs/06-extrato-com-estabelecimento-join-vs-n1.md)
+- [07 — Scalability benchmark: 1M vs. 10M vs. 50M](docs/07-benchmark-escala.md)
+- [08 — Concurrent antifraud queue with SKIP LOCKED](docs/08-fila-antifraude-concorrente-skip-locked.md)
 
-- 100 mil contas;
-- 5 mil estabelecimentos;
-- 10 milhões de transações por padrão;
-- distribuição desigual, em que 1% das contas concentra aproximadamente 60% das transações;
-- 1% das transações com o status `flagged`.
+## Data set
 
-O volume de transações e o tamanho dos lotes são parametrizáveis. Assim, os problemas de indexação aparecem em uma escala mais próxima de um sistema real, e não somente em tabelas pequenas em que qualquer consulta parece rápida.
+The generator creates:
 
-## Como executar
+- 100,000 accounts;
+- 5,000 counterparties;
+- 10 million transactions by default;
+- a skewed distribution where 1% of accounts owns about 60% of transactions;
+- 1% of transactions with the `flagged` status.
 
-Suba o PostgreSQL:
+The volumes and batch sizes are configurable. This makes poor access paths visible instead of benchmarking only small tables where almost every query looks fast.
+
+## Run locally
+
+Requirements: Docker, Python 3.12+ and `make`.
 
 ```bash
 docker compose up -d
-```
-
-Crie o ambiente Python, o schema e a massa de dados:
-
-```bash
 make venv
 make schema
 make generate-data
-```
-
-Crie os índices finais utilizados pelos estudos:
-
-```bash
 make indexes
+make test
 ```
 
-Para remover somente esses índices:
+Remove only the case-study indexes with:
 
 ```bash
 make drop-indexes
 ```
 
-## Reprodução dos benchmarks
-
-O benchmark de N+1 executa 1.000 vezes as duas abordagens e compara a mediana observada pelo cliente:
+## Reproduce the benchmarks
 
 ```bash
 make benchmark-n-plus-one
-```
-
-O benchmark de escala cria uma tabela `UNLOGGED` descartável, mede a consulta em 1M, 10M e 50M de linhas e remove a tabela ao final:
-
-```bash
 make benchmark-scale
+make benchmark-skip-locked
 ```
 
-Na escala de 50 milhões, a tabela temporária e seu índice ocupam aproximadamente 6 GB. A tabela `transactions` original não é modificada.
+The scale benchmark creates and removes a disposable `UNLOGGED` table. At 50 million rows, the table and its index require about 6 GB. The original `transactions` table is never modified. The concurrent benchmark also uses a disposable queue and checks that every item is claimed exactly once.
 
-## Estrutura
+## Continuous integration
+
+GitHub Actions starts PostgreSQL 18.4, generates a reduced 50,000-transaction data set, applies every index, runs integration tests and exercises the concurrent `SKIP LOCKED` scenario.
+
+## Repository structure
 
 ```text
-benchmarks/   scripts dos benchmarks reproduzíveis
-db/schema/    definição das tabelas
-db/indexes/   índices finais dos estudos
-db/queries/   consultas utilizadas nos casos
-docs/         planos, explicações e resultados medidos
+benchmarks/   reproducible scripts, methodology and raw results
+db/schema/    table definitions
+db/indexes/   final indexes used by the case studies
+db/queries/   queries discussed in the case studies
+docs/         execution plans, explanations and measured results
+tests/        database integration tests executed in CI
 ```
