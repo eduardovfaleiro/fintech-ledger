@@ -1,3 +1,15 @@
 .venv/
 __pycache__/
 *.pyc
+.claude/
+.aws
+.env
+.env.*
+.idea/
+.vscode/
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+CURRICULO.md

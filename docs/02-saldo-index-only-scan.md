@@ -1,6 +1,6 @@
-# 02 — Saldo: Index Only Scan
+# 02 — Posição líquida sintética: Index Only Scan
 
-Agora, vamos para o caso 2. Vamos pegar o saldo de um usuário whale do banco, com 6.277 transações.
+Este caso calcula a posição líquida sintética de uma conta com 6.277 transações. Ela serve para estudar acesso ao heap e não representa saldo contábil ou saldo disponível de um produto financeiro.
 
 **Cenário:** PostgreSQL 18.4, tabela `transactions` com 10 milhões de linhas e cache quente.
 
@@ -11,17 +11,23 @@ Agora, vamos para o caso 2. Vamos pegar o saldo de um usuário whale do banco, c
 
 ## A consulta
 
-Para isso, vamos utilizar a consulta get_balance.sql:
+Para isso, usamos [`get_balance.sql`](../db/queries/get_balance.sql):
 
 ```sql
 select
-      sum(amount) filter (where direction = 'credit')
-    - sum(amount) filter (where direction = 'debit') as balance
-  from
-      transactions
-  where
-      account_id = 30362;
+	coalesce(sum(
+		case direction
+			when 'credit' then amount
+			when 'debit' then -amount
+		end
+	), 0)::numeric(15, 2) as balance
+from
+	transactions
+where
+	account_id = 30362;
 ```
+
+O `coalesce` devolve zero para uma conta sem transações e a expressão funciona também quando existem somente créditos ou somente débitos. O status não participa deste cálculo de propósito: o objetivo isolado é medir um covering index sobre `account_id`, `amount` e `direction`, e não definir uma regra de saldo disponível.
 
 ## O índice existente: acesso ao heap
 
@@ -90,11 +96,11 @@ A inclusão desses campos no índice tem alguns prós e contras:
 
 ### Contras
 
-- Inserts terão custo extra na execução, já que precisam incluir esses campos também (updates não são inclusos aqui porque transactions é append-only)
-- O índice é mais pesado para carregar em cache (301 MB vs 473 MB)
+- Inserções terão custo extra, pois também precisam manter essas colunas no índice. A tabela bloqueia `UPDATE` e `DELETE`; correções são representadas por novos eventos.
+- O índice é mais pesado para carregar em cache (301 MB contra 473 MB).
 
 ### Prós
 
-- Não precisa fazer acesso ao heap quando as páginas estão marcadas como `all-visible` no visibility map. Neste caso, `Heap Fetches: 0` confirma que nenhum acesso foi necessário, reduzindo drasticamente o tempo de execução.
+- Não precisa fazer acesso ao heap quando as páginas estão marcadas como `all-visible` no visibility map. Neste caso, `Heap Fetches: 0` confirma que nenhum acesso foi necessário, reduzindo o tempo de execução.
 
-Nesse caso, se a consulta de saldo for frequente, vale a pena trocar o aumento de 57% no tamanho do índice pela redução de 12.249 ms para 2.780 ms no tempo de execução.
+Neste workload, o aumento de 57% no tamanho do índice reduziu o tempo da consulta de 12,249 ms para 2,780 ms. A decisão em outro sistema dependeria da frequência de leitura, da taxa de escrita e da pressão de cache; o benchmark não torna esse índice automaticamente recomendável.

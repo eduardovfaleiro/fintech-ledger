@@ -15,16 +15,25 @@ Cada plano foi coletado com apenas o índice em questão existindo na tabela, e 
 Neste caso, foi testada a consulta [get_statement.sql](../db/queries/get_statement.sql):
 ```sql
 select
-	*
+	id,
+	created_at,
+	amount,
+	direction,
+	status,
+	category,
+	counterparty_id
 from
 	transactions
 where
 	account_id = 47
-	and created_at between '2025-01-01' and '2025-04-01'
+	and created_at >= '2025-01-01'
+	and created_at < '2025-04-01'
 order by
 	created_at desc;
 ```
-Repare que existem duas condições para o where: account_id e created_at, além do order by.
+O intervalo é semiaberto: inclui o instante inicial e exclui o final. Assim, o limite superior não inclui acidentalmente a meia-noite do dia seguinte. Este caso não pagina resultados; a ordenação determinística usada na paginação é tratada no [caso 03](03-paginacao-offset-vs-keyset-pagination.md).
+
+Os planos abaixo são artefatos da execução de referência, coletada antes desse ajuste de fronteira com o intervalo inclusivo equivalente para a massa usada. Essa diferença não altera a comparação dos caminhos de acesso.
 
 ## Sem índice nenhum
 
@@ -35,12 +44,19 @@ Além disso, vai precisar aplicar um algoritmo de sort para ordenar por created_
 ```sql
 explain (analyze, buffers)
 select
-	*
+	id,
+	created_at,
+	amount,
+	direction,
+	status,
+	category,
+	counterparty_id
 from
 	transactions
 where
 	account_id = 47
-	and created_at between '2025-01-01' and '2025-04-01'
+	and created_at >= '2025-01-01'
+	and created_at < '2025-04-01'
 order by
 	created_at desc;
 ```
@@ -59,7 +75,7 @@ order by
          Worker 0:  Sort Method: quicksort  Memory: 25kB
          Worker 1:  Sort Method: quicksort  Memory: 25kB
          ->  Parallel Seq Scan on transactions  (cost=0.00..187492.62 rows=19 width=61) (actual time=84.043..187.852 rows=1.67 loops=3)
-               Filter: ((created_at >= '2025-01-01 00:00:00+00'::timestamp with time zone) AND (created_at <= '2025-04-01 00:00:00+00'::timestamp with time zone) AND (account_id = 47))
+               Filter: ((created_at >= '2025-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '2025-04-01 00:00:00+00'::timestamp with time zone) AND (account_id = 47))
                Rows Removed by Filter: 3333332
                Buffers: shared hit=2503 read=112075
  Planning:
@@ -80,7 +96,7 @@ E os Buffers somam 114.654 blocos (hit=2579 + read=112075), ou seja, cerca de 89
 
 Agora, vamos analisar no caso de adicionar índices. Nós poderíamos colocar um índice somente em account_id, o que já otimizaria muito a consulta.
 Entretanto, como a busca pela conta e data andam de mãos dadas em extratos, é interessante que criemos um índice com ambos os campos, não acha?
-Do contrário, o banco precisaria acessar cada transação no heap para saber se a data (não considerada no índice) está entre 01/01/2025 e 01/04/2025 ou não.
+Do contrário, o banco precisaria acessar cada transação no heap para saber se a data (não considerada no índice) pertence ao período pesquisado.
 
 Em um primeiro momento, talvez você pense em criar o índice (created_at, account_id), por talvez achar que ordem da coluna em índice não importa.
 Mas importa, e importa muito.
@@ -103,7 +119,7 @@ Assim, a ordem de criação dos campos do índice fez com que account_id deixass
                                                                                    QUERY PLAN                                                                                    
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Index Scan Backward using idx_transactions_created_at_account_id on transactions  (cost=0.43..25883.90 rows=45 width=61) (actual time=1.974..16.989 rows=5.00 loops=1)
-   Index Cond: ((created_at >= '2025-01-01 00:00:00+00'::timestamp with time zone) AND (created_at <= '2025-04-01 00:00:00+00'::timestamp with time zone) AND (account_id = 47))
+   Index Cond: ((created_at >= '2025-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '2025-04-01 00:00:00+00'::timestamp with time zone) AND (account_id = 47))
    Index Searches: 1
    Buffers: shared hit=3655
  Planning:
@@ -133,13 +149,13 @@ Para fazer a mesma consulta, você faria a busca na B tree somente para as trans
 e teria todas as datas ordenadas, já que você só está buscando as transações de uma conta específica, a 47. Com isso, o banco desce direto até a primeira transação
 da conta 47 em 01/01/2025 e lê as folhas em sequência, parando assim que a data passa de 01/04/2025. Nenhuma linha lida é descartada.
 
-Se você for criar um índice concatenado, prefira colocar primeiro colunas que você vai usar = no where e, só depois, colunas que você vai usar range / BETWEEN no where.
+Neste padrão de consulta, a coluna usada com igualdade vem antes da coluna de intervalo. Essa ordem não é uma regra universal: ela deriva dos predicados e da ordenação que este índice precisa atender.
 
 ```text
                                                                                    QUERY PLAN                                                                                    
 ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  Index Scan Backward using idx_transactions_account_id_created_at on transactions  (cost=0.43..189.47 rows=46 width=61) (actual time=0.027..0.030 rows=5.00 loops=1)
-   Index Cond: ((account_id = 47) AND (created_at >= '2025-01-01 00:00:00+00'::timestamp with time zone) AND (created_at <= '2025-04-01 00:00:00+00'::timestamp with time zone))
+   Index Cond: ((account_id = 47) AND (created_at >= '2025-01-01 00:00:00+00'::timestamp with time zone) AND (created_at < '2025-04-01 00:00:00+00'::timestamp with time zone))
    Index Searches: 1
    Buffers: shared hit=11
  Planning:
@@ -157,4 +173,4 @@ dentro de cada conta, o banco não precisa ordenar nada. Ele só lê as folhas a
 
 Agora, perceba a diferença gritante das duas execuções, só trocando as ordens dos índices. Na primeira, com (created_at, account_id), o executor teve que ler 3655 blocos do banco de dados (Buffers: shared hit=3655). Repare que o número que importa é a soma de hit e read, e não só o read. Os dois são blocos que o executor precisou ler, e o hit apenas indica que aquele bloco já estava em cache. Considerando que um bloco é a menor unidade possível de um banco e que possui 8 KB cada, isso equivale a 28,5 MB. Enquanto isso, na segunda execução, com (account_id, created_at), o executor leu apenas 11 blocos, equivalendo a míseros 88 KB.
 
-Isso impactou diretamente o tempo de execução: 17 ms vs 0.060ms.
+Isso impactou diretamente o tempo de execução: 17 ms contra 0,060 ms.
