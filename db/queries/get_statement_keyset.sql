@@ -7,9 +7,9 @@ select
 from
     transactions
 where
-    account_id = 30362
-    and (created_at, id) < ('2024-07-15 02:17:35+00', 9133625)
+    account_id = %s
+    and (created_at, id) < (%s, %s)
 order by
     created_at desc,
     id desc
-limit 50;
+limit %s;

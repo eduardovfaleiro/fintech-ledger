@@ -1,7 +1,11 @@
 select
-	  sum(amount) filter (where direction = 'credit')
-	- sum(amount) filter (where direction = 'debit') as balance
+    coalesce(sum(
+        case direction
+            when 'credit' then amount
+            when 'debit' then -amount
+        end
+    ), 0)::numeric(15, 2) as balance
 from
-	transactions
+    transactions
 where
-	account_id = 30362;
+    account_id = %s;

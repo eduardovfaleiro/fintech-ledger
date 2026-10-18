@@ -4,4 +4,8 @@ select
 from
     counterparties
 where
-    upper(name) like upper('Mercado Central') || '%';
+    upper(name) like upper(%s) || '%%'
+order by
+    name,
+    id
+limit %s;

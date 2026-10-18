@@ -13,4 +13,4 @@ where
 order by
     created_at,
     id
-limit 100;
+limit %s;

@@ -10,8 +10,8 @@ from
 join
     counterparties c on c.id = t.counterparty_id
 where
-    t.account_id = 30362
+    t.account_id = %s
 order by
     t.created_at desc,
     t.id desc
-limit 50;
+limit %s;

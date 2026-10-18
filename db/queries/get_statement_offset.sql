@@ -7,9 +7,9 @@ select
 from
     transactions
 where
-    account_id = 30362
+    account_id = %s
 order by
     created_at desc,
     id desc
-limit 50
-offset 5000;
+limit %s
+offset %s;

@@ -6,20 +6,59 @@ import numpy as np
 from db_connection import get_connection
 
 FIRST_NAMES = [
-    "Ana", "Bruno", "Carla", "Diego", "Elisa", "Fabio", "Gabriela", "Hugo",
-    "Isabela", "Joao", "Karina", "Lucas", "Mariana", "Nelson", "Otavio",
-    "Patricia", "Rafael", "Sofia", "Thiago", "Vanessa",
+    "Ana",
+    "Bruno",
+    "Carla",
+    "Diego",
+    "Elisa",
+    "Fabio",
+    "Gabriela",
+    "Hugo",
+    "Isabela",
+    "Joao",
+    "Karina",
+    "Lucas",
+    "Mariana",
+    "Nelson",
+    "Otavio",
+    "Patricia",
+    "Rafael",
+    "Sofia",
+    "Thiago",
+    "Vanessa",
 ]
 LAST_NAMES = [
-    "Almeida", "Barbosa", "Costa", "Duarte", "Esteves", "Ferreira", "Gomes",
-    "Henriques", "Junqueira", "Lima", "Martins", "Nogueira", "Oliveira",
-    "Pereira", "Ribeiro", "Santos", "Teixeira", "Vieira",
+    "Almeida",
+    "Barbosa",
+    "Costa",
+    "Duarte",
+    "Esteves",
+    "Ferreira",
+    "Gomes",
+    "Henriques",
+    "Junqueira",
+    "Lima",
+    "Martins",
+    "Nogueira",
+    "Oliveira",
+    "Pereira",
+    "Ribeiro",
+    "Santos",
+    "Teixeira",
+    "Vieira",
 ]
 STATUSES = np.array(["active", "closed"])
 STATUS_WEIGHTS = np.array([0.9, 0.1])
 
-OPENED_START = dt.datetime(2019, 1, 1, tzinfo=dt.timezone.utc)
-OPENED_END = dt.datetime(2026, 8, 6, tzinfo=dt.timezone.utc)
+OPENED_START = dt.datetime(2019, 1, 1, tzinfo=dt.UTC)
+OPENED_END = dt.datetime(2023, 12, 31, 23, 59, 59, tzinfo=dt.UTC)
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
 
 
 def generate_rows(count: int, rng: np.random.Generator):
@@ -37,19 +76,21 @@ def generate_rows(count: int, rng: np.random.Generator):
 
 def main():
     parser = argparse.ArgumentParser(description="Popula a tabela accounts.")
-    parser.add_argument("--count", type=int, default=100_000)
+    parser.add_argument("--count", type=positive_int, default=100_000)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
 
     with get_connection() as conn:
-        with conn.cursor() as cur:
-            with cur.copy(
+        with (
+            conn.cursor() as cur,
+            cur.copy(
                 "COPY accounts (customer_name, opened_at, status) FROM STDIN"
-            ) as copy:
-                for row in generate_rows(args.count, rng):
-                    copy.write_row(row)
+            ) as copy,
+        ):
+            for row in generate_rows(args.count, rng):
+                copy.write_row(row)
         conn.commit()
 
     print(f"accounts: {args.count} linhas inseridas")

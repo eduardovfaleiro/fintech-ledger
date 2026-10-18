@@ -1,9 +1,16 @@
 select
-	*
+    id,
+    created_at,
+    amount,
+    direction,
+    status,
+    category,
+    counterparty_id
 from
-	transactions
+    transactions
 where
-	account_id = 47
-	and created_at between '2025-01-01' and '2025-04-01'
+    account_id = %s
+    and created_at >= %s
+    and created_at < %s
 order by
-	created_at desc;
+    created_at desc;

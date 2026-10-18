@@ -9,13 +9,13 @@ with next_batch as (
         created_at,
         transaction_id
     for update skip locked
-    limit 25
+    limit %s
 )
 update
     antifraud_queue_demo queue
 set
     status = 'processing',
-    worker_id = 'worker-1',
+    worker_id = %s,
     claimed_at = clock_timestamp()
 from
     next_batch
