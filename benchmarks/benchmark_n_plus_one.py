@@ -1,13 +1,19 @@
 import argparse
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from benchmarks.common import environment_metadata, summarize, write_json
+from benchmarks.common import (
+    environment_metadata,
+    non_negative_int,
+    positive_int,
+    summarize,
+    write_json,
+)
 from db_connection import get_connection
-
+from query_loader import load_query
 
 GET_TRANSACTIONS = """
 select
@@ -29,20 +35,7 @@ from counterparties
 where id = %s
 """
 
-GET_STATEMENT_WITH_COUNTERPARTY = """
-select
-    t.id,
-    t.created_at,
-    t.amount,
-    t.direction,
-    t.category,
-    c.name
-from transactions t
-join counterparties c on c.id = t.counterparty_id
-where t.account_id = %s
-order by t.created_at desc, t.id desc
-limit %s
-"""
+GET_STATEMENT_WITH_COUNTERPARTY = load_query("get_statement_with_counterparty.sql")
 
 
 def run_n_plus_one(cur, account_id: int, page_size: int):
@@ -59,9 +52,9 @@ def run_join(cur, account_id: int, page_size: int):
     cur.fetchall()
 
 
-def elapsed_ms(operation) -> float:
+def elapsed_ms(operation, *args) -> float:
     started_at = time.perf_counter_ns()
-    operation()
+    operation(*args)
     return (time.perf_counter_ns() - started_at) / 1_000_000
 
 
@@ -77,9 +70,7 @@ def measure(cur, account_id: int, page_size: int, executions: int):
             operations = reversed(operations)
 
         for name, operation in operations:
-            samples[name].append(
-                elapsed_ms(lambda: operation(cur, account_id, page_size))
-            )
+            samples[name].append(elapsed_ms(operation, cur, account_id, page_size))
 
     return samples
 
@@ -94,10 +85,10 @@ def print_summary(name: str, summary: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Compara N+1 com um único JOIN.")
-    parser.add_argument("--account-id", type=int, default=30362)
-    parser.add_argument("--page-size", type=int, default=50)
-    parser.add_argument("--executions", type=int, default=1_000)
-    parser.add_argument("--warmup", type=int, default=20)
+    parser.add_argument("--account-id", type=positive_int, default=30362)
+    parser.add_argument("--page-size", type=positive_int, default=50)
+    parser.add_argument("--executions", type=positive_int, default=1_000)
+    parser.add_argument("--warmup", type=non_negative_int, default=20)
     parser.add_argument(
         "--output",
         default="benchmarks/results/n_plus_one.json",

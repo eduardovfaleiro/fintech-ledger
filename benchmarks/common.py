@@ -1,10 +1,32 @@
+import argparse
 import datetime as dt
 import json
 import math
 import os
-from pathlib import Path
 import platform
 import statistics
+from pathlib import Path
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return parsed
+
+
+def non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return parsed
+
+
+def non_negative_float(value: str) -> float:
+    parsed = float(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return parsed
 
 
 def percentile(values: list[float], probability: float) -> float:
@@ -67,7 +89,7 @@ def environment_metadata(conn) -> dict:
     physical_pages = os.sysconf("SC_PHYS_PAGES")
 
     return {
-        "recorded_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "recorded_at": dt.datetime.now(dt.UTC).isoformat(),
         "client": {
             "platform": platform.platform(),
             "python": platform.python_version(),

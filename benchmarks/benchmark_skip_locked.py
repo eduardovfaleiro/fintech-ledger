@@ -1,40 +1,29 @@
 import argparse
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from benchmarks.common import environment_metadata, summarize, write_json
+from benchmarks.common import (
+    environment_metadata,
+    non_negative_float,
+    non_negative_int,
+    positive_int,
+    summarize,
+    write_json,
+)
 from db_connection import get_connection
-
+from query_loader import load_query
 
 TABLE_NAME = "antifraud_queue_demo"
 
-CLAIM_WITH_LOCK = f"""
-with next_batch as (
-    select transaction_id
-    from {TABLE_NAME}
-    where status = 'queued'
-    order by created_at, transaction_id
-    for update
-    limit %s
-)
-update {TABLE_NAME} queue
-set
-    status = 'processing',
-    worker_id = %s,
-    claimed_at = clock_timestamp()
-from next_batch
-where queue.transaction_id = next_batch.transaction_id
-returning queue.transaction_id
-"""
-
-CLAIM_WITH_SKIP_LOCKED = CLAIM_WITH_LOCK.replace(
-    "for update\n",
-    "for update skip locked\n",
+CLAIM_WITH_SKIP_LOCKED = load_query("claim_antifraud_batch.sql")
+CLAIM_WITH_LOCK = CLAIM_WITH_SKIP_LOCKED.replace(
+    "for update skip locked",
+    "for update",
 )
 
 
@@ -193,12 +182,16 @@ def main():
     parser = argparse.ArgumentParser(
         description="Compara FOR UPDATE com FOR UPDATE SKIP LOCKED."
     )
-    parser.add_argument("--jobs", type=int, default=1_000)
-    parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--batch-size", type=int, default=25)
-    parser.add_argument("--processing-delay-ms", type=float, default=5)
-    parser.add_argument("--executions", type=int, default=30)
-    parser.add_argument("--warmup", type=int, default=2)
+    parser.add_argument("--jobs", type=positive_int, default=1_000)
+    parser.add_argument("--workers", type=positive_int, default=4)
+    parser.add_argument("--batch-size", type=positive_int, default=25)
+    parser.add_argument(
+        "--processing-delay-ms",
+        type=non_negative_float,
+        default=5,
+    )
+    parser.add_argument("--executions", type=positive_int, default=30)
+    parser.add_argument("--warmup", type=non_negative_int, default=2)
     parser.add_argument(
         "--output",
         default="benchmarks/results/skip_locked.json",
@@ -247,9 +240,7 @@ def main():
         "p50_speedup": round(speedup, 3),
         "samples_ms": {
             "for_update": [round(value, 6) for value in without_skip_samples],
-            "for_update_skip_locked": [
-                round(value, 6) for value in with_skip_samples
-            ],
+            "for_update_skip_locked": [round(value, 6) for value in with_skip_samples],
         },
     }
     write_json(args.output, payload)

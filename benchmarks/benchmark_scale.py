@@ -1,22 +1,38 @@
 import argparse
-from pathlib import Path
+import datetime as dt
+import math
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from benchmarks.common import environment_metadata, summarize, write_json
+from benchmarks.common import (
+    environment_metadata,
+    non_negative_int,
+    positive_int,
+    summarize,
+    write_json,
+)
 from db_connection import get_connection
-
 
 TABLE_NAME = "benchmark_transactions"
 INDEX_NAME = "idx_benchmark_transactions_account_created_at"
 
 QUERY = f"""
-select *
+select
+    id,
+    account_id,
+    counterparty_id,
+    amount,
+    direction,
+    status,
+    category,
+    created_at
 from {TABLE_NAME}
 where account_id = %s
-  and created_at between %s and %s
+  and created_at >= %s
+  and created_at < %s
 order by created_at desc
 """
 
@@ -65,42 +81,57 @@ def create_table(cur) -> None:
     )
 
 
-def extend_table(cur, rows: int) -> None:
-    if rows == 1_000_000:
-        cur.execute(
-            f"insert into {TABLE_NAME} select * from transactions where id <= 1000000"
+def maximum_copy_number(target_rows: int, source_rows: int) -> int:
+    return math.ceil(target_rows / source_rows) - 1
+
+
+def extend_table(
+    cur,
+    current_rows: int,
+    target_rows: int,
+    source_rows: int,
+) -> None:
+    rows_to_add = target_rows - current_rows
+    if rows_to_add <= 0:
+        raise ValueError("target_rows must be greater than current_rows")
+
+    max_copy = maximum_copy_number(target_rows, source_rows)
+    cur.execute(
+        f"""
+        insert into {TABLE_NAME}
+        select
+            t.id + (copies.copy_number * %s),
+            t.account_id,
+            t.counterparty_id,
+            t.amount,
+            t.direction,
+            t.status,
+            t.category,
+            t.created_at + (copies.copy_number * interval '1 microsecond')
+        from generate_series(0, %s) as copies(copy_number)
+        cross join transactions t
+        where t.id + (copies.copy_number * %s) > %s
+          and t.id + (copies.copy_number * %s) <= %s
+        """,
+        (
+            source_rows,
+            max_copy,
+            source_rows,
+            current_rows,
+            source_rows,
+            target_rows,
+        ),
+    )
+    if cur.rowcount != rows_to_add:
+        raise RuntimeError(
+            f"Expected to insert {rows_to_add} rows, inserted {cur.rowcount}."
         )
-    elif rows == 10_000_000:
-        cur.execute(
-            f"insert into {TABLE_NAME} select * from transactions where id > 1000000"
-        )
-    elif rows == 50_000_000:
-        cur.execute(
-            f"""
-            insert into {TABLE_NAME}
-            select
-                t.id + (copies.copy_number * 10000000),
-                t.account_id,
-                t.counterparty_id,
-                t.amount,
-                t.direction,
-                t.status,
-                t.category,
-                t.created_at + (copies.copy_number * interval '1 microsecond')
-            from transactions t
-            cross join generate_series(1, 4) as copies(copy_number)
-            """
-        )
-    else:
-        raise ValueError(f"Escala não suportada: {rows}")
 
     cur.execute(f"analyze {TABLE_NAME}")
 
 
 def create_index(cur) -> None:
-    cur.execute(
-        f"create index {INDEX_NAME} on {TABLE_NAME} (account_id, created_at)"
-    )
+    cur.execute(f"create index {INDEX_NAME} on {TABLE_NAME} (account_id, created_at)")
     cur.execute(f"analyze {TABLE_NAME}")
 
 
@@ -126,21 +157,42 @@ def print_summary(rows: int, scenario: str, summary: dict) -> None:
     )
 
 
+def iso_date(value: str) -> str:
+    try:
+        dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must use the YYYY-MM-DD format") from exc
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Mede a consulta de extrato em 1M, 10M e 50M de linhas."
     )
-    parser.add_argument("--account-id", type=int, default=47)
-    parser.add_argument("--executions", type=int, default=30)
-    parser.add_argument("--warmup", type=int, default=3)
-    parser.add_argument("--start-date", default="2025-01-01")
-    parser.add_argument("--end-date", default="2025-04-01")
+    parser.add_argument("--account-id", type=positive_int, default=47)
+    parser.add_argument("--executions", type=positive_int, default=30)
+    parser.add_argument("--warmup", type=non_negative_int, default=3)
+    parser.add_argument("--start-date", type=iso_date, default="2025-01-01")
+    parser.add_argument("--end-date", type=iso_date, default="2025-04-01")
+    parser.add_argument(
+        "--scales",
+        nargs="+",
+        type=positive_int,
+        default=[1_000_000, 10_000_000, 50_000_000],
+        metavar="ROWS",
+        help="strictly increasing row counts (default: 1M 10M 50M)",
+    )
     parser.add_argument("--keep-table", action="store_true")
     parser.add_argument(
         "--output",
         default="benchmarks/results/scale.json",
     )
     args = parser.parse_args()
+    if args.scales != sorted(set(args.scales)):
+        parser.error("--scales must contain unique values in increasing order")
+    if args.start_date >= args.end_date:
+        parser.error("--start-date must be earlier than --end-date")
+
     parameters = (args.account_id, args.start_date, args.end_date)
 
     with get_connection() as conn:
@@ -150,18 +202,23 @@ def main():
 
         try:
             with conn.cursor() as cur:
-                cur.execute("select count(*) from transactions")
-                source_rows = cur.fetchone()[0]
-                if source_rows < 10_000_000:
+                cur.execute("select count(*), min(id), max(id) from transactions")
+                source_rows, minimum_id, maximum_id = cur.fetchone()
+                if source_rows == 0:
+                    raise RuntimeError("The transactions table is empty.")
+                if minimum_id != 1 or maximum_id != source_rows:
                     raise RuntimeError(
-                        "O benchmark de escala exige ao menos 10 milhões de transações."
+                        "The scale benchmark requires transaction IDs to be dense "
+                        "and start at 1. Recreate the data set with `make reset`."
                     )
 
                 create_table(cur)
+                current_rows = 0
 
-                for rows in (1_000_000, 10_000_000, 50_000_000):
+                for rows in args.scales:
                     print(f"==> preparando {rows:,} linhas", flush=True)
-                    extend_table(cur, rows)
+                    extend_table(cur, current_rows, rows, source_rows)
+                    current_rows = rows
 
                     without_index_samples = measure(
                         cur,
@@ -197,8 +254,7 @@ def main():
                             ),
                             "samples_ms": {
                                 "without_index": [
-                                    round(value, 6)
-                                    for value in without_index_samples
+                                    round(value, 6) for value in without_index_samples
                                 ],
                                 "with_index": [
                                     round(value, 6) for value in with_index_samples
@@ -211,7 +267,7 @@ def main():
                         }
                     )
 
-                    if rows != 50_000_000:
+                    if rows != args.scales[-1]:
                         cur.execute(f"drop index {INDEX_NAME}")
 
             payload = {
@@ -219,6 +275,7 @@ def main():
                 "methodology": {
                     "account_id": args.account_id,
                     "period": [args.start_date, args.end_date],
+                    "scales": args.scales,
                     "warmup_executions": args.warmup,
                     "measured_executions_per_scenario": args.executions,
                     "measurement": "client wall-clock time",
